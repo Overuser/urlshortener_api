@@ -14,15 +14,20 @@ const urlSchema = new Schema({
   short_url: String
 })
 
-const URL = mongoose.model("url", urlSchema)
+const URLmodel = mongoose.model("url", urlSchema)
+
+const isUrlValid = (string) => {
+  try {
+    new URL(string);
+    return true;
+  } catch (err) {
+    return false;
+  }
+ }
 
 app.use(cors());
 app.use(bodyParser.urlencoded({ extended: false }))
-
-app.use((req, res, next) => {
-  console.log(req.body)
-  next()
-})
+app.use(bodyParser.json())
 
 app.use('/public', express.static(`${process.cwd()}/public`));
 
@@ -33,24 +38,25 @@ app.get('/', function(req, res) {
 // POST API endpoint
 app.post('/api/shorturl', function(req, res) {
   //check if the format of the url is valid
-  if(!new RegExp(/^((https|http):\/\/www.)([a-z0-9]+).([a-z]+)(\/?$|\/[a-z0-9]+$)/ig).test(req.body.url)){
+  if(!isUrlValid(req.body.url)){
     return res.json({ error: 'invalid url' })
   }
 
+  const url = new URL(req.body.url);
   //look up the url 
-  dns.lookup(req.body.url.replace(/^((https|http)?:\/\/(www\.)?)|(\/?$|\/[a-z0-9]+$)/g, ""), (err, adress, family) => {
+  dns.lookup(url.hostname, (err, adress, family) => {
     //check for errors
     if (err !== null) {
-      return res.json(err?.code === 'ENOTFOUND' ? { error: 'url not found' } : { error: 'something went wrong' });
+      return res.json(err?.code === 'ENOTFOUND' ? { error: 'invalid url' } : { error: 'something went wrong' });
     }
 
     //check if the url alredy exist if so return the url else create new short url
-    URL.findOne({ original_url:  req.body.url.replace(/\/?$/g, "")}).then((doc) => {
+    URLmodel.findOne({ original_url:  url.toString()}).then((doc) => {
       if (doc) {
         return res.json({ original_url: doc.original_url, short_url: doc.short_url });
       }
 
-      new URL({ original_url: req.body.url.replace(/\/?$/g, ""), short_url: crypto.randomUUID().slice(0, 8) + URL.length }).save().then(({ original_url, short_url }) => {
+      new URLmodel({ original_url: url.toString(), short_url: crypto.randomUUID().slice(0, 8) + URLmodel.length }).save().then(({ original_url, short_url }) => {
         return res.json({ original_url, short_url });
       }).catch(() => {
         return res.json({ error: 'something went wrong' })
@@ -62,11 +68,11 @@ app.post('/api/shorturl', function(req, res) {
 app.get('/api/shorturl/:url', function(req, res) {
   const { url } = req.params
 
-  URL.findOne({ short_url: url }).then((doc) => {
+  URLmodel.findOne({ short_url: url }).then((doc) => {
     if(doc){
       return res.redirect(doc.original_url)
     } else {
-      return res.json({error: "No short URL found for the given input"})
+      return res.json({error: "No short url found for the given input"})
     }
   })
 });
